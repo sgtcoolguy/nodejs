@@ -18,23 +18,34 @@
 
 Chef::Recipe.send(:include, NodeJs::Helper)
 
-node.force_override['nodejs']['install_method'] = 'binary' # ~FC019
-
 # FIXME: Handle s390x, ppc64, arm64, armv61, armv71, ppc64le
 # Shamelessly borrowed from http://docs.chef.io/dsl_recipe_method_platform.html
 # Surely there's a more canonical way to get arch?
 arch = if node['kernel']['machine'] =~ /armv6l/
-         'arm-pi' # assume a raspberry pi
+         if node['nodejs']['binary']['checksum']['linux_armv6l'] || node['nodejs']['checksum'][node['nodejs']['version']]['linux']['armv6l']['tar.xz'] || node['nodejs']['checksum'][node['nodejs']['version']]['linux']['armv6l']['tar.gz']
+           node['kernel']['machine']
+         else
+           'arm-pi' # assume a raspberry pi as NodeJs don't have a package for it in this version
+         end
+       elsif node['kernel']['machine'] =~ /aarch64/
+         'arm64'
+       elsif node['kernel']['machine'] =~ /x86_64/
+         'x64'
+       elsif node['kernel']['machine'] =~ /\d86/
+         'x86'
        else
-         node['kernel']['machine'] =~ /x86_64/ ? 'x64' : 'x86'
+         node['kernel']['machine']
        end
 
-# package_stub is for example: "node-v6.9.1-linux-x64.tar.xz"
+# needed to uncompress the binary
+package 'tar' if platform_family?('rhel', 'fedora', 'amazon', 'suse')
+
+# package_stub is for example: "node-v6.9.1-linux-x64.tar.gz"
 version = "v#{node['nodejs']['version']}/"
-prefix = node['nodejs']['prefix_url'][node['nodejs']['engine']]
+prefix = node['nodejs']['prefix_url']['node']
 
 # Choose short platform name and file extension based on our platform family
-# Used to buidl the URL
+# Used to build the URL
 case node['platform_family']
 when 'windows'
   platform = 'win'
@@ -50,7 +61,7 @@ when 'smartos', 'omnios', 'openindiana', 'opensolaris', 'solaris2', 'nexentacore
   extension = 'tar.xz'
 else
   platform = 'linux'
-  extension = 'tar.xz'
+  extension = 'tar.gz'
 end
 
 if node['nodejs']['engine'] == 'iojs'
@@ -70,15 +81,14 @@ if node['nodejs']['binary']['url']
   checksum = node['nodejs']['binary']['checksum']
 else
   nodejs_bin_url = ::URI.join(prefix, version, filename).to_s
-  checksum = node['nodejs']['binary']['checksum']["#{platform}_#{arch}"]
 end
 
-if node['nodejs']['binary']['win_install_dir']
-  win_install_dir = node['nodejs']['binary']['win_install_dir']
-else
-  # FIXME: Use Program Files(x86) if installing 32-bit version on 64-bit windows!
-  win_install_dir = "C:\\Program Files\\#{archive_name}"
-end
+checksum = node['nodejs']['binary']['checksum']["#{platform}_#{arch}"] if checksum.nil?
+checksum = node['nodejs']['checksum'][node['nodejs']['version']][platform][arch][extension] if checksum.nil?
+
+win_install_dir = node['nodejs']['binary']['win_install_dir']
+win_install_dir = "C:\\Program Files(x86)\\#{archive_name}" if win_install_dir.nil? && node['kernel']['machine'] =~ /x86_64/ && "#{platform}_#{arch}" == 'win_x86'
+win_install_dir = "C:\\Program Files\\#{archive_name}" if win_install_dir.nil?
 
 ark archive_name do
   url nodejs_bin_url
