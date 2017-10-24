@@ -30,7 +30,9 @@ module NodeJs
     end
 
     def npm_package_installed?(package, version = nil, path = nil, npm_token = nil)
-      environment = { 'NPM_TOKEN' => npm_token } if npm_token
+      environment = {}
+      environment['NPM_TOKEN'] = npm_token if npm_token
+      environment['PATH'] = "/usr/local/bin:#{ENV['PATH']}" if platform?('mac_os_x')
 
       list = npm_list(package, path, environment)['dependencies']
       # Return true if package installed and installed to good version
